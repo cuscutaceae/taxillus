@@ -22,16 +22,33 @@ pub struct ACHeaders {
     pub sign: String,
 }
 
+#[derive(Debug, thiserror::Error)]
+pub enum GenerateSignatureError {
+    #[error("app id too short: actual: {actual}, required: {required}")]
+    AppIdTooShort { actual: usize, required: usize },
+    #[error("invalid hmac key length")]
+    InvalidHmacKeyLength,
+}
+
+#[must_use]
+pub fn generate_device_id(device_name: &str) -> String {
+    hex::encode(&sha2::Sha256::digest(device_name.as_bytes()).to_vec()[0..8])
+}
+
 impl ACHeaders {
+    /// # Errors
+    /// 见[`GenerateSignatureError`]
     pub fn new_hash_device_id(
         config: &Config,
         device_name: &str,
         encrypted_content: Option<&str>,
     ) -> Result<Self, GenerateSignatureError> {
-        let device_id = hex::encode(&sha2::Sha256::digest(device_name.as_bytes()).to_vec()[0..8]);
+        let device_id = generate_device_id(device_name);
         Self::new(config, device_name, &device_id, encrypted_content)
     }
 
+    /// # Errors
+    /// 见[`GenerateSignatureError`]
     pub fn new(
         config: &Config,
         device_name: &str,
@@ -78,15 +95,7 @@ fn random_string() -> String {
         .collect()
 }
 
-#[derive(Debug, thiserror::Error)]
-pub enum GenerateSignatureError {
-    #[error("app id too short: actual: {actual}, required: {required}")]
-    AppIdTooShort { actual: usize, required: usize },
-    #[error("invalid hmac key length")]
-    InvalidHmacKeyLength,
-}
-
-pub fn generate_signature(
+fn generate_signature(
     encrypted_content: &str,
     app_id: &str,
     api_ver: &str,

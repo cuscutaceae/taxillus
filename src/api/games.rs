@@ -22,12 +22,14 @@ pub enum Error {
     Encrypt(#[from] enc::Error),
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct GeneralArgs {
+    /// For `FX_TOKEN`
     device_name: String,
 }
 
 impl GeneralArgs {
+    #[must_use]
     pub fn new_from_device_model_name(device_name: &str) -> Self {
         let mut rnd = StdRng::from_seed(sha2::Sha256::digest(device_name.as_bytes()).into());
         let available_char = [
@@ -113,10 +115,13 @@ pub struct LoginResultUserDetail {
     pub session: String,
     pub channel_uid: String,
     pub user_id: String,
+    #[serde(rename = "channel_username")]
     pub channel_username: String,
     pub last_login_time: i64,
 }
 
+/// # Errors
+/// 见[`Error`]
 pub async fn login(
     config: &Config,
     args: LoginArgs,
@@ -126,8 +131,39 @@ pub async fn login(
         config,
         |it| {
             it.post(format!(
-                "{}/{}",
+                "{}{}",
                 config.api_game_prefix, config.api_game_login
+            ))
+        },
+        args,
+        general_args,
+    )
+    .await
+}
+
+#[derive(Debug, Serialize)]
+pub struct SyncArgs {
+    #[serde(rename = "_version")]
+    pub version_alt: String,
+    #[serde(rename = "_platform")]
+    pub platform_alt: String,
+    pub channel: String,
+    pub session: String,
+}
+
+/// # Errors
+/// 见[`Error`]
+pub async fn sync(
+    config: &Config,
+    args: SyncArgs,
+    general_args: GeneralArgs,
+) -> Result<String, Error> {
+    game_api_call_raw(
+        config,
+        |it| {
+            it.post(format!(
+                "{}{}",
+                config.api_game_prefix, config.api_game_sync
             ))
         },
         args,
@@ -156,6 +192,27 @@ where
         .json::<EncryptedGameBody>()
         .await?
         .game_api_decrypt::<R>(&config.encrypt_game_key, &config.encrypt_game_iv)?)
+}
+
+async fn game_api_call_raw<T, F>(
+    config: &Config,
+    url: F,
+    args: T,
+    general_args: GeneralArgs,
+) -> Result<String, Error>
+where
+    T: Serialize,
+    F: FnOnce(&Client) -> RequestBuilder,
+{
+    Ok(url(get_client())
+        .attach_headers(config, &general_args.device_name)
+        .attach_encrypt_json(args, config)?
+        .send()
+        .await?
+        .error_for_status()?
+        .json::<EncryptedGameBody>()
+        .await?
+        .game_api_decrypt_raw(&config.encrypt_game_key, &config.encrypt_game_iv)?)
 }
 
 trait GameApiTrait {

@@ -25,9 +25,9 @@ pub enum Error {
     GenerateSignature(#[from] GenerateSignatureError),
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct GeneralArgs {
-    device_name: String,
+    pub device_name: String,
 }
 
 fn get_client() -> &'static Client {
@@ -49,7 +49,7 @@ pub struct SmsLoginArgs {
     pub mobile: String,
     pub client_id: String,
     pub pack_key: String,
-    pub mobile_check: bool,
+    pub mobile_check: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -59,6 +59,8 @@ pub struct SmsLoginResult {
     pub error_info: String,
 }
 
+/// # Errors
+/// 见[`Error`]
 pub async fn sms_login(
     config: &Config,
     args: SmsLoginArgs,
@@ -68,7 +70,7 @@ pub async fn sms_login(
         config,
         |it| {
             it.post(format!(
-                "{}/{}",
+                "{}{}",
                 config.api_account_prefix, config.api_account_sms_login
             ))
         },
@@ -93,7 +95,7 @@ pub struct OauthTokenArgs {
 pub struct OauthTokenResultData {
     pub access_token: String,
     pub app_session: String,
-    pub expire_in: String,
+    pub expire_in: i64,
 }
 
 #[derive(Debug, Deserialize)]
@@ -104,6 +106,8 @@ pub struct OauthTokenResult {
     pub data: OauthTokenResultData,
 }
 
+/// # Errors
+/// 见[`Error`]
 pub async fn oauth_token(
     config: &Config,
     args: OauthTokenArgs,
@@ -113,7 +117,7 @@ pub async fn oauth_token(
         config,
         |it| {
             it.post(format!(
-                "{}/{}",
+                "{}{}",
                 config.api_account_prefix, config.api_account_oauth_token
             ))
         },

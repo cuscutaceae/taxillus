@@ -6,7 +6,6 @@ static CONFIG: OnceLock<Config> = OnceLock::new();
 
 #[derive(Debug)]
 pub struct Config {
-    pub ac_appid: String,
     pub ac_app_id: String,
     pub ac_api_ver: String,
     pub ac_sdk_ver: String,
@@ -26,6 +25,7 @@ pub struct Config {
     pub api_account_user_detail: String,
     pub api_game_prefix: String,
     pub api_game_login: String,
+    pub api_game_sync: String,
     pub encrypt_account_key: [u8; 16],
     pub encrypt_game_key: [u8; 32],
     pub encrypt_game_iv: [u8; 16],
@@ -33,7 +33,6 @@ pub struct Config {
 
 #[derive(Debug, Deserialize)]
 pub struct ConfigRaw {
-    pub ac_appid: String,
     pub ac_app_id: String,
     pub ac_api_ver: String,
     pub ac_sdk_ver: String,
@@ -53,16 +52,18 @@ pub struct ConfigRaw {
     pub api_account_user_detail: String,
     pub api_game_prefix: String,
     pub api_game_login: String,
+    pub api_game_sync: String,
     pub encrypt_account_key: String,
     pub encrypt_game_key: String,
     pub encrypt_game_iv: String,
 }
 
 impl Config {
+    /// # Panics
+    /// 当配置项缺失或非法时panic
     pub fn init() -> &'static Self {
         let config_raw = envy::from_env::<ConfigRaw>().expect("failed to initialize config");
         CONFIG.get_or_init(|| Self {
-            ac_appid: config_raw.ac_appid,
             ac_app_id: config_raw.ac_app_id,
             ac_api_ver: config_raw.ac_api_ver,
             ac_sdk_ver: config_raw.ac_sdk_ver,
@@ -88,21 +89,24 @@ impl Config {
             api_account_user_detail: config_raw.api_account_user_detail,
             api_game_prefix: config_raw.api_game_prefix,
             api_game_login: config_raw.api_game_login,
-            encrypt_account_key: hex::decode(config_raw.encrypt_account_key)
+            api_game_sync: config_raw.api_game_sync,
+            encrypt_account_key: hex::decode(config_raw.encrypt_account_key.replace(' ', ""))
                 .expect("failed to initialize ENCRYPT_ACCOUNT_KEY: bad hex")
                 .try_into()
                 .expect("failed to initialize ENCRYPT_ACCOUNT_KEY: bad length"),
-            encrypt_game_key: hex::decode(config_raw.encrypt_game_key)
+            encrypt_game_key: hex::decode(config_raw.encrypt_game_key.replace(' ', ""))
                 .expect("failed to initialize ENCRYPT_GAME_KEY: bad hex")
                 .try_into()
                 .expect("failed to initialize ENCRYPT_GAME_KEY: bad length"),
-            encrypt_game_iv: hex::decode(config_raw.encrypt_game_iv)
+            encrypt_game_iv: hex::decode(config_raw.encrypt_game_iv.replace(' ', ""))
                 .expect("failed to initialize ENCRYPT_GAME_IV: bad hex")
                 .try_into()
                 .expect("failed to initialize ENCRYPT_GAME_IV: bad length"),
         })
     }
 
+    /// # Panics
+    /// 当配置未初始化时panic
     pub fn get() -> &'static Self {
         CONFIG.get().expect("should initialize config first")
     }

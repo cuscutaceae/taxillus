@@ -5,7 +5,6 @@ use aes::{
     cipher::{
         BlockModeDecrypt, BlockModeEncrypt, KeyInit, KeyIvInit,
         block_padding::{self, Pkcs7, ZeroPadding},
-        inout::{self},
     },
 };
 use base64::Engine;
@@ -33,9 +32,7 @@ pub struct EncryptedGameBodyData {
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
     #[error("encryption error: {0}")]
-    Encrypt(#[from] block_padding::Error),
-    #[error("decryption error: {0}")]
-    Decrypt(#[from] inout::PadError),
+    Decrypt(#[from] block_padding::Error),
     #[error("serde_json error: {0}")]
     SerdeJson(#[from] serde_json::Error),
     #[error("base64 decode error: {0}")]
@@ -47,23 +44,35 @@ pub enum Error {
 }
 
 pub trait IntoAccountApiEncryption {
+    /// # Errors
+    /// 见[`Error`]
     fn account_api_encrypt(self, key: &[u8; 16]) -> Result<String, Error>;
 }
 
 pub trait FromAccountApiEncryption {
+    /// # Errors
+    /// 见[`Error`]
     fn account_api_decrypt<T>(self, key: &[u8; 16]) -> Result<T, Error>
     where
         T: DeserializeOwned;
 }
 
 pub trait IntoGameApiEncryption {
+    /// # Errors
+    /// 见[`Error`]
     fn game_api_encrypt(self, key: &[u8; 32], iv: &[u8; 16]) -> Result<String, Error>;
 }
 
 pub trait FromGameApiEncryption {
+    /// # Errors
+    /// 见[`Error`]
     fn game_api_decrypt<T>(self, key: &[u8; 32], iv: &[u8; 16]) -> Result<T, Error>
     where
         T: DeserializeOwned;
+
+    /// # Errors
+    /// 见[`Error`]
+    fn game_api_decrypt_raw(self, key: &[u8; 32], iv: &[u8; 16]) -> Result<String, Error>;
 }
 
 impl<T> IntoAccountApiEncryption for T
@@ -73,7 +82,7 @@ where
     fn account_api_encrypt(self, key: &[u8; 16]) -> Result<String, Error> {
         let string = serde_json::to_string(&self)?;
         let buf = string.as_bytes();
-        let encrypted = encrypt_account(key, buf)?;
+        let encrypted = encrypt_account(key, buf);
         let base64 = base64::prelude::BASE64_STANDARD.encode(encrypted);
         Ok(urlencoding::encode(&base64).to_string())
     }
@@ -105,7 +114,7 @@ where
     fn game_api_encrypt(self, key: &[u8; 32], iv: &[u8; 16]) -> Result<String, Error> {
         let string = serde_json::to_string(&self)?;
         let buf = string.as_bytes();
-        let encrypted = encrypt_game(key, iv, buf)?;
+        let encrypted = encrypt_game(key, iv, buf);
         let base64 = base64::prelude::BASE64_STANDARD.encode(encrypted);
         Ok(base64)
     }
@@ -116,11 +125,15 @@ impl FromGameApiEncryption for EncryptedGameBody {
     where
         T: DeserializeOwned,
     {
+        let t = serde_json::from_str::<T>(&self.game_api_decrypt_raw(key, iv)?)?;
+        Ok(t)
+    }
+
+    fn game_api_decrypt_raw(self, key: &[u8; 32], iv: &[u8; 16]) -> Result<String, Error> {
         let origin = base64::prelude::BASE64_STANDARD.decode(self.data.enc_data)?;
         let decrypted = decrypt_game(key, iv, &origin)?;
         let decrypted_string = String::from_utf8(decrypted)?;
-        let t = serde_json::from_str::<T>(&decrypted_string)?;
-        Ok(t)
+        Ok(decrypted_string)
     }
 }
 
@@ -131,12 +144,10 @@ fn decrypt_account(key: &[u8; 16], cipher_text: &[u8]) -> Result<Vec<u8>, block_
     Ok(plaintext.to_vec())
 }
 
-fn encrypt_account(key: &[u8; 16], origin_text: &[u8]) -> Result<Vec<u8>, inout::PadError> {
-    let mut buf = origin_text.to_vec();
-    let buf_len = buf.len();
-    let plaintext = ecb::Encryptor::<Aes128>::new(key.into())
-        .encrypt_padded::<ZeroPadding>(&mut buf, buf_len)?;
-    Ok(plaintext.to_vec())
+fn encrypt_account(key: &[u8; 16], origin_text: &[u8]) -> Vec<u8> {
+    let buf = origin_text.to_vec();
+
+    ecb::Encryptor::<Aes128>::new(key.into()).encrypt_padded_vec::<ZeroPadding>(&buf)
 }
 
 fn decrypt_game(
@@ -150,14 +161,8 @@ fn decrypt_game(
     Ok(plaintext.to_vec())
 }
 
-fn encrypt_game(
-    key: &[u8; 32],
-    iv: &[u8; 16],
-    origin_text: &[u8],
-) -> Result<Vec<u8>, inout::PadError> {
-    let mut buf = origin_text.to_vec();
-    let buf_len = buf.len();
-    let plaintext = cbc::Encryptor::<Aes256>::new(key.into(), iv.into())
-        .encrypt_padded::<Pkcs7>(&mut buf, buf_len)?;
-    Ok(plaintext.to_vec())
+fn encrypt_game(key: &[u8; 32], iv: &[u8; 16], origin_text: &[u8]) -> Vec<u8> {
+    let buf = origin_text.to_vec();
+
+    cbc::Encryptor::<Aes256>::new(key.into(), iv.into()).encrypt_padded_vec::<Pkcs7>(&buf)
 }
